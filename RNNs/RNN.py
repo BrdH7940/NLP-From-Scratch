@@ -134,34 +134,38 @@ class RNN:
 
         return grads
 
-    # Modified train to accept one-hot inputs X
-    def train(self, X_one_hot_train, y_train, lr = 0.001, epochs = 100, clip_value = 5.0, print_every = 10):
+    def train(self, X_one_hot_train, y_train, data_generator=None, lr=0.001, epochs=100, 
+              clip_value=5.0, print_every=10, generated_examples=5):
         """
-        Trains the RNN model using SGD with one-hot inputs.
+        Trains the RNN model using SGD with one-hot inputs and generates sample predictions
+        during training to showcase the model's progress.
         """
         num_sequences = len(X_one_hot_train)
         loss_history = []
-
+        
+        # Store data_generator for sampling (optional)
+        if data_generator:
+            self.data_generator = data_generator
+        
         print(f"Starting training (One-Hot Input) for {epochs} epochs...")
         print(f"Learning rate: {lr}, Clipping: {clip_value}")
-
+        
         for epoch in range(epochs):
             start_time = time.time()
             epoch_loss = 0.0
-            h0_epoch = np.zeros((self.hidden_dim, 1))
-
+            
             for i in range(num_sequences):
-                x_seq = X_one_hot_train[i] # Now list of one-hot vectors
+                x_seq = X_one_hot_train[i]  # List of one-hot vectors
                 y_seq = y_train[i]
                 sequence_length = len(x_seq)
                 if sequence_length == 0: continue
-
-                current_h0 = np.zeros((self.hidden_dim, 1)) # Reset per sequence
-
+                
+                current_h0 = np.zeros((self.hidden_dim, 1))  # Reset per sequence
+                
                 # Pass h0 to forward
                 cache = self.forward(x_seq, current_h0)
                 y_preds = cache['y_preds']
-
+                
                 # --- Loss Calculation (Unchanged logic) ---
                 seq_loss = 0.0; epsilon = 1e-12
                 for t in range(sequence_length):
@@ -170,69 +174,168 @@ class RNN:
                     seq_loss += -np.log(correct_class_prob + epsilon)
                 avg_seq_loss = seq_loss / sequence_length
                 epoch_loss += avg_seq_loss
-                # -----------------------------------------
-
+                
+                # Backward pass and parameter update
                 grads = self.backward(y_seq, cache, clip_value)
-
-                # --- Parameter Update Loop (No W_embed) ---
-                for grad_key, grad_value in grads.items():
-                    param_key = grad_key[1:]
-                    if param_key in self.params:
-                        self.params[param_key] -= lr * grad_value
-                    else:
-                        # This warning shouldn't trigger if grads dict is correct
-                        print(f"Warning: Grad key {grad_key} mismatch")
-                # ---------------------------------------------
-
+                
+                # --- Parameter Update Loop ---
+                # Updated to use direct attribute access instead of params dictionary
+                self.W_hy -= lr * grads['dW_hy']
+                self.W_hh -= lr * grads['dW_hh']
+                self.W_xh -= lr * grads['dW_xh']  
+                self.b_h -= lr * grads['db_h']
+                self.b_y -= lr * grads['db_y']
+            
             # --- End of Epoch ---
             average_epoch_loss = epoch_loss / num_sequences
             loss_history.append(average_epoch_loss)
             end_time = time.time()
+            
             if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {average_epoch_loss:.4f}, Time: {end_time - start_time:.2f}s")
+                
+                # Generate examples to showcase model's progress using word_to_ix and ix_to_word
+                if hasattr(self, 'word_to_ix') and hasattr(self, 'ix_to_word'):
+                    print("\nGenerated examples:")
+                    for _ in range(generated_examples):
+                        # Use a random word from vocabulary as seed
+                        seed_word = list(self.word_to_ix.keys())[0]  # Default to first word
+                        try:
+                            seed_word = random.choice(list(self.word_to_ix.keys()))
+                        except:
+                            pass
+                        
+                        h0_sample = np.zeros((self.hidden_dim, 1))
+                        sampled_indices = self.sample_words(seed_word, h0_sample, n=10, sample_strategy='random')
+                        
+                        # Convert indices to words
+                        sampled_text = ' '.join(self.ix_to_word.get(idx, "<UNK>") for idx in sampled_indices)
+                        print(f"  {sampled_text}")
+                
+                print()  # Add an empty line for better readability
                 sys.stdout.flush()
-
+        
         print("Training Completed")
         return loss_history
-
-    # Modified sample to use one-hot inputs
-    def sample(self, seed_word, h_prev, n, sample_strategy='argmax'):
-        """ Samples sequence using one-hot inputs. """
-        if self.word_to_ix is None or not self.ix_to_word:
-             print("Error: Word mapping not set."); return []
-
-        seed_ix = self.word_to_ix.get(seed_word.lower(), self.word_to_ix['<UNK>'])
+    
+    def sample_words(self, seed_word, h_prev, n=10, sample_strategy='random'):
+        """
+        Samples a sequence of words from the trained RNN model.
+        
+        Args:
+            seed_word: Starting word or word index
+            h_prev: Initial hidden state
+            n: Number of words to generate (default: 10)
+            sample_strategy: Strategy for sampling ('random' or 'argmax')
+            
+        Returns:
+            List of indices representing the generated sequence of words
+        """
+        # Handle both word and index inputs
+        if isinstance(seed_word, str):
+            if not hasattr(self, 'word_to_ix'):
+                print("Warning: word_to_ix not found. Using random index.")
+                seed_ix = np.random.randint(0, self.vocab_size)
+            else:
+                seed_ix = self.word_to_ix.get(seed_word.lower(), 0)  # Default to first word if not found
+        else:
+            seed_ix = seed_word
+        
         current_ix = seed_ix
         generated_indices = [current_ix]
         h = h_prev
-
+        
         # Create initial one-hot input from seed_ix
         x = np.zeros((self.vocab_size, 1))
         x[current_ix] = 1
-
+        
+        # Generate n words
         for _ in range(n):
-            # --- Forward pass for one step ---
-            # Input 'x' is the one-hot vector of the last chosen word
-            a_t = self.W_hh @ h + self.W_xh @ x + self.b_h # Use x directly
+            # Forward pass for one step - using direct attribute access
+            a_t = self.W_hh @ h + self.W_xh @ x + self.b_h
             h = np.tanh(a_t)
             z_t = self.W_hy @ h + self.b_y
-            y_hat_t = softmax(z_t)
-
-            # --- Sampling Strategy (Unchanged logic, just uses y_hat_t) ---
-            p = y_hat_t[:, 0].copy(); p[current_ix] = 0 # Prevent repetition
-            p_sum = np.sum(p);
-            if p_sum > 1e-9: p = p / p_sum
-            else: p = np.ones(self.vocab_size) / self.vocab_size
-
-            if sample_strategy == 'random': ix = np.random.choice(range(self.vocab_size), p=p)
-            elif sample_strategy == 'argmax': ix = np.argmax(p)
-            else: raise ValueError(f"Invalid sample_strategy")
-            # --------------------------------------------------------------
-
+            y_hat_t = self.softmax(z_t)
+            
+            # Sampling Strategy
+            p = y_hat_t[:, 0].copy()
+            
+            if sample_strategy == 'random':
+                ix = np.random.choice(range(self.vocab_size), p=p)
+            elif sample_strategy == 'argmax':
+                ix = np.argmax(p)
+            else:
+                raise ValueError(f"Invalid sample_strategy: {sample_strategy}")
+            
             # Update current_ix and prepare next input x
             current_ix = ix
             generated_indices.append(ix)
-            x = np.zeros((self.vocab_size, 1)) # Reset x
-            x[current_ix] = 1 # Set the chosen index to 1 for next input
-
+            
+            # Reset x for next input
+            x = np.zeros((self.vocab_size, 1))
+            x[current_ix] = 1
+        
         return generated_indices
+    
+    def predict_words(self, start_text, n=10, sample_strategy='random'):
+        """
+        Generate a sequence of words starting with the given text.
+        
+        Args:
+            start_text: Starting word or phrase
+            n: Number of additional words to generate
+            sample_strategy: Strategy for sampling ('random' or 'argmax')
+            
+        Returns:
+            Generated text string including the start_text
+        """
+        if not hasattr(self, 'word_to_ix') or not hasattr(self, 'ix_to_word'):
+            return "Error: Word mappings not available for prediction"
+        
+        # Initialize hidden state
+        h = np.zeros((self.hidden_dim, 1))
+        
+        # Split start_text into words and find their indices
+        words = start_text.lower().split()
+        indices = []
+        
+        for word in words:
+            if word in self.word_to_ix:
+                indices.append(self.word_to_ix[word])
+            elif "<UNK>" in self.word_to_ix:
+                indices.append(self.word_to_ix["<UNK>"])
+        
+        # If no valid words were found, use a default
+        if not indices:
+            if "<UNK>" in self.word_to_ix:
+                indices = [self.word_to_ix["<UNK>"]]
+            elif self.word_to_ix:
+                indices = [list(self.word_to_ix.values())[0]]
+            else:
+                return "Error: Cannot find valid starting words"
+        
+        # Process each word to set up the hidden state
+        for idx in indices:
+            x = np.zeros((self.vocab_size, 1))
+            x[idx] = 1
+            
+            # Update hidden state
+            a_t = self.W_hh @ h + self.W_xh @ x + self.b_h
+            h = np.tanh(a_t)
+        
+        # Sample additional words
+        last_idx = indices[-1]
+        sampled_indices = self.sample_words(last_idx, h, n, sample_strategy)
+        
+        # Combine original words with generated words (skip the first as it's duplicated)
+        all_indices = indices + sampled_indices[1:]
+        generated_text = ' '.join(self.ix_to_word.get(idx, "<UNK>") for idx in all_indices)
+        
+        return generated_text
+    
+    def softmax(self, x):
+        """
+        Compute softmax values for each set of scores in x.
+        """
+        e_x = np.exp(x - np.max(x, axis=0))
+        return e_x / e_x.sum(axis=0)

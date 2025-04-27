@@ -26,7 +26,7 @@ def one_hot(index, vocab_size):
     vec[index] = 1
     return vec
 
-# --- Word Data Preparation (Modified to return one-hot X) ---
+# --- Word Data Preparation ---
 def prepare_word_data_onehot(text, vocab_threshold=2, sequence_len=None):
     """
     Prepares word-level data: tokenization, vocab, one-hot sequences.
