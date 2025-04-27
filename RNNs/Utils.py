@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 from collections import Counter
+import random
 import sys
 import time
 
@@ -20,12 +21,6 @@ def xavier_init(n_out, n_in):
     limit = np.sqrt(6 / (n_in + n_out))
     return np.random.uniform(-limit, limit, (n_out, n_in))
 
-def one_hot(index, vocab_size):
-    """ Creates a one-hot column vector. """
-    vec = np.zeros((vocab_size, 1))
-    vec[index] = 1
-    return vec
-
 # --- Word Data Preparation ---
 def prepare_word_data_onehot(text, vocab_threshold=2, sequence_len=None):
     """
@@ -34,27 +29,36 @@ def prepare_word_data_onehot(text, vocab_threshold=2, sequence_len=None):
     Returns:
         tuple: (X_train_onehot, Y_train_onehot, word_to_ix, ix_to_word, vocab_size)
     """
+    # --- Step 1: Tokenization ---
     print("Preparing word data (one-hot inputs)...")
     text = text.lower()
     words = re.findall(r'\b\w+\b', text)
     print(f"Total words found: {len(words)}")
 
-    word_counts = Counter(words)
-    vocab = [word for word, count in word_counts.items() if count >= vocab_threshold]
+    # --- Step 2: Build Vocabulary ---
+    word_counts = Counter(words) # Count the occurence of each word
+
+    # If the number of occurences of a word does not satify the threshold, remove (Potential rare words)
+    vocab = [word for word, count in word_counts.items() if count >= vocab_threshold] 
+
+    # Represent any word encountered later that is not in our filtered vocabulary.
     vocab.append('<UNK>')
     vocab_size = len(vocab)
     print(f"Vocabulary size (threshold>={vocab_threshold}): {vocab_size}")
 
+    # --- Step 3: Create Word-to-Index Mappings ---
     word_to_ix = {word: i for i, word in enumerate(vocab)}
     ix_to_word = {i: word for i, word in enumerate(vocab)}
     unk_ix = word_to_ix['<UNK>']
 
+    # --- Step 4: Convert Original Word Sequence to Index Sequence ---
     all_indices = [word_to_ix.get(word, unk_ix) for word in words]
     if not all_indices: return [], [], {}, {}, 0
 
     X_all_indices = all_indices[:-1]
     Y_all_indices = all_indices[1:]
 
+    # --- Step 5: Create One-Hot Vectors (Or Sequences) ---
     X_train_onehot = []
     Y_train_onehot = []
 

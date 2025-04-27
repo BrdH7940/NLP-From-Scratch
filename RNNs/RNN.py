@@ -13,28 +13,24 @@ class RNN:
         self.vocab_size = vocab_size
 
         # --- Parameters ---
-        # W_xh now maps one-hot input (|V|) to hidden (Dh)
-        # Renamed from W_hx for clarity (Input X -> Hidden H)
-        self.W_xh = xavier_init(hidden_dim, vocab_size)     # Shape Dh x |V|
+        self.W_hx = xavier_init(hidden_dim, vocab_size)     # Shape Dh x |V|
         self.W_hh = xavier_init(hidden_dim, hidden_dim)     # Shape Dh x Dh
         self.W_hy = xavier_init(vocab_size, hidden_dim)     # Shape |V| x Dh
         self.b_h = np.zeros((hidden_dim, 1))                # Shape Dh x 1
         self.b_y = np.zeros((vocab_size, 1))                # Shape |V| x 1
 
         self.params = {
-            # 'W_embed' removed
-            'W_xh': self.W_xh, 'W_hh': self.W_hh,
+            'W_hx': self.W_hx, 'W_hh': self.W_hh,
             'W_hy': self.W_hy, 'b_h': self.b_h, 'b_y': self.b_y
         }
-        # Mappings set later
+        
+        # --- Mappings: For Sampling ---
         self.word_to_ix = None
         self.ix_to_word = None
 
-
-    # Modified forward to accept one-hot inputs
     def forward(self, input_one_hots, h_prev):
         """
-        Performs forward pass with one-hot inputs.
+        Performs forward pass.
 
         Args:
             input_one_hots (list): List of one-hot vectors (shape |V| x 1), length T.
@@ -43,31 +39,27 @@ class RNN:
         Returns:
             cache (dict): Stores 'one_hot_inputs', 'h_states', 'y_preds'.
         """
-        # Cache for necessary values
+        # Cache
         X_one_hots_s, h_states, y_preds = {}, {}, {}
+
         h_states[-1] = np.copy(h_prev)
 
         for t in range(len(input_one_hots)):
-            x_t = input_one_hots[t] # Get the one-hot vector directly
+            # Forward pass
+            x_t = input_one_hots[t]
             h_prev_t = h_states[t - 1]
-
-            # --- Forward Equations ---
-            # Embedding lookup removed
-            # Use W_xh with the one-hot vector x_t
-            a_t = self.W_hh @ h_prev_t + self.W_xh @ x_t + self.b_h
-            h = tanh(a_t)
-            y_pred = softmax(self.W_hy @ h + self.b_y)
+            a_t = self.W_hh @ h_prev_t + self.W_hx @ x_t + self.b_h
+            h_t = tanh(a_t)
+            y_pred = softmax(self.W_hy @ h_t + self.b_y)
 
             # Store necessary items for backward pass
-            X_one_hots_s[t] = x_t # Store the one-hot input
-            h_states[t] = h
+            X_one_hots_s[t] = x_t
+            h_states[t] = h_t
             y_preds[t] = y_pred
 
-        # Cache includes one-hot inputs now
         cache = {'one_hot_inputs': X_one_hots_s, 'h_states': h_states, 'y_preds': y_preds}
         return cache
 
-    # Modified backward to remove embedding calculations
     def backward(self, targets, cache, clip_value=None):
         """
         Performs backward pass for one-hot input model.
@@ -78,7 +70,7 @@ class RNN:
             clip_value (float, optional): Gradient clipping value.
 
         Returns:
-            dict: Gradients (excluding dW_embed).
+            dict: Gradients.
         """
         # Cache Extraction
         X_one_hots = cache['one_hot_inputs']
@@ -86,47 +78,40 @@ class RNN:
         y_preds = cache['y_preds']
         sequence_length = len(X_one_hots)
 
-        # Initialization (dW_embed removed)
-        dW_xh = np.zeros_like(self.W_xh) # Correct name and shape
+        # Initialization
+        dW_hx = np.zeros_like(self.W_hx)
         dW_hh = np.zeros_like(self.W_hh)
         dW_hy = np.zeros_like(self.W_hy)
         db_h = np.zeros_like(self.b_h)
         db_y = np.zeros_like(self.b_y)
-        delta_h_plus_1 = np.zeros_like(self.b_h)
+        dh_next_t = np.zeros_like(self.b_h)
 
         for t in reversed(range(sequence_length)):
-            x_t = X_one_hots[t] # Get one-hot input
+            # --- Get values from cache ---
+            x_t = X_one_hots[t]
             y_pred = y_preds[t]
             y = targets[t]
             h = h_states[t]
             h_prev = h_states[t - 1]
 
+            # --- Gradient calculation ---
             dz = y_pred - y
+
             db_y += dz
             dW_hy += dz @ h.T
 
-            # delta_h_t calculation (using corrected verified rule)
             h_next = h_states.get(t + 1, np.zeros_like(h))
             diag_term = np.diag(1 - h_next[:, 0] ** 2)
-            dh = self.W_hy.T @ dz + self.W_hh.T @ diag_term @ delta_h_plus_1
+            dh = self.W_hy.T @ dz + self.W_hh.T @ diag_term @ dh_next_t
             da = dh * (1 - h ** 2)
 
-            # Gradient w.r.t W_hh, b_h unchanged in formula
             dW_hh += da @ h_prev.T
             db_h += da
+            dW_hx += da @ x_t.T
+            dh_next_t = dh
 
-            # Gradient w.r.t W_xh uses one-hot x_t
-            dW_xh += da @ x_t.T # Shape (Dhx1) @ (1x|V|) -> Dhx|V|
-
-            # Gradient w.r.t embedding removed
-            # delta_e_t calculation removed
-            # np.add.at for dW_embed removed
-
-            # Update delta_h_plus_1 for next iteration
-            delta_h_plus_1 = dh
-
-        # Returned grads updated
-        grads = {'dW_hy': dW_hy, 'db_y': db_y, 'dW_hh': dW_hh, 'dW_xh': dW_xh, 'db_h': db_h}
+        # Returned updated grads
+        grads = {'dW_hy': dW_hy, 'db_y': db_y, 'dW_hh': dW_hh, 'dW_hx': dW_hx, 'db_h': db_h}
 
         if clip_value is not None:
             for key in grads:
@@ -143,7 +128,7 @@ class RNN:
         num_sequences = len(X_one_hot_train)
         loss_history = []
         
-        # Store data_generator for sampling (optional)
+        # Store data_generator for sampling
         if data_generator:
             self.data_generator = data_generator
         
@@ -155,6 +140,7 @@ class RNN:
             epoch_loss = 0.0
             
             for i in range(num_sequences):
+                # --- Setting up variables ---
                 x_seq = X_one_hot_train[i]  # List of one-hot vectors
                 y_seq = y_train[i]
                 sequence_length = len(x_seq)
@@ -162,11 +148,11 @@ class RNN:
                 
                 current_h0 = np.zeros((self.hidden_dim, 1))  # Reset per sequence
                 
-                # Pass h0 to forward
+                # --- Forward ---
                 cache = self.forward(x_seq, current_h0)
                 y_preds = cache['y_preds']
                 
-                # --- Loss Calculation (Unchanged logic) ---
+                # --- Loss Calculation ---
                 seq_loss = 0.0; epsilon = 1e-12
                 for t in range(sequence_length):
                     y_pred = y_preds[t]; y = y_seq[t]
@@ -175,14 +161,13 @@ class RNN:
                 avg_seq_loss = seq_loss / sequence_length
                 epoch_loss += avg_seq_loss
                 
-                # Backward pass and parameter update
+                # --- Backward ---
                 grads = self.backward(y_seq, cache, clip_value)
                 
-                # --- Parameter Update Loop ---
-                # Updated to use direct attribute access instead of params dictionary
+                # --- Parameter Update ---
                 self.W_hy -= lr * grads['dW_hy']
                 self.W_hh -= lr * grads['dW_hh']
-                self.W_xh -= lr * grads['dW_xh']  
+                self.W_hx -= lr * grads['dW_hx']  
                 self.b_h -= lr * grads['db_h']
                 self.b_y -= lr * grads['db_y']
             
@@ -194,11 +179,11 @@ class RNN:
             if (epoch + 1) % print_every == 0 or epoch == epochs - 1:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {average_epoch_loss:.4f}, Time: {end_time - start_time:.2f}s")
                 
-                # Generate examples to showcase model's progress using word_to_ix and ix_to_word
+                # --- Generate Examples ---
                 if hasattr(self, 'word_to_ix') and hasattr(self, 'ix_to_word'):
                     print("\nGenerated examples:")
                     for _ in range(generated_examples):
-                        # Use a random word from vocabulary as seed
+                        # Generate a sequence of words, starting from "seed_word" (Chosen randomly)
                         seed_word = list(self.word_to_ix.keys())[0]  # Default to first word
                         try:
                             seed_word = random.choice(list(self.word_to_ix.keys()))
@@ -206,13 +191,13 @@ class RNN:
                             pass
                         
                         h0_sample = np.zeros((self.hidden_dim, 1))
-                        sampled_indices = self.sample_words(seed_word, h0_sample, n=10, sample_strategy='random')
+                        sampled_indices = self.sample_words(seed_word, h0_sample, n=10, sample_strategy='argmax')
                         
                         # Convert indices to words
                         sampled_text = ' '.join(self.ix_to_word.get(idx, "<UNK>") for idx in sampled_indices)
                         print(f"  {sampled_text}")
                 
-                print()  # Add an empty line for better readability
+                print()
                 sys.stdout.flush()
         
         print("Training Completed")
@@ -220,7 +205,7 @@ class RNN:
     
     def sample_words(self, seed_word, h_prev, n=10, sample_strategy='random'):
         """
-        Samples a sequence of words from the trained RNN model.
+        Samples a sequence of words (Begins with seed_word) from RNN.
         
         Args:
             seed_word: Starting word or word index
@@ -231,7 +216,8 @@ class RNN:
         Returns:
             List of indices representing the generated sequence of words
         """
-        # Handle both word and index inputs
+        # Ensure having the integer index (seed_ix) corresponding to the starting word, 
+        #                   regardless of whether a string or an index was provided.
         if isinstance(seed_word, str):
             if not hasattr(self, 'word_to_ix'):
                 print("Warning: word_to_ix not found. Using random index.")
@@ -241,23 +227,22 @@ class RNN:
         else:
             seed_ix = seed_word
         
+        # --- Intialization ---
         current_ix = seed_ix
         generated_indices = [current_ix]
         h = h_prev
-        
-        # Create initial one-hot input from seed_ix
         x = np.zeros((self.vocab_size, 1))
         x[current_ix] = 1
         
-        # Generate n words
+        # --- Generate n words ---
         for _ in range(n):
-            # Forward pass for one step - using direct attribute access
-            a_t = self.W_hh @ h + self.W_xh @ x + self.b_h
+            # --- Forward pass ---
+            a_t = self.W_hh @ h + self.W_hx @ x + self.b_h
             h = np.tanh(a_t)
             z_t = self.W_hy @ h + self.b_y
-            y_hat_t = self.softmax(z_t)
+            y_hat_t = softmax(z_t)
             
-            # Sampling Strategy
+            # --- Sampling Strategy ---
             p = y_hat_t[:, 0].copy()
             
             if sample_strategy == 'random':
@@ -267,11 +252,11 @@ class RNN:
             else:
                 raise ValueError(f"Invalid sample_strategy: {sample_strategy}")
             
-            # Update current_ix and prepare next input x
+            # --- Output Handling ---
             current_ix = ix
             generated_indices.append(ix)
             
-            # Reset x for next input
+            # --- Prepare next input ---
             x = np.zeros((self.vocab_size, 1))
             x[current_ix] = 1
         
@@ -295,6 +280,8 @@ class RNN:
         # Initialize hidden state
         h = np.zeros((self.hidden_dim, 1))
         
+        # --- Data Preprocessing ---
+
         # Split start_text into words and find their indices
         words = start_text.lower().split()
         indices = []
@@ -320,9 +307,11 @@ class RNN:
             x[idx] = 1
             
             # Update hidden state
-            a_t = self.W_hh @ h + self.W_xh @ x + self.b_h
+            a_t = self.W_hh @ h + self.W_hx @ x + self.b_h
             h = np.tanh(a_t)
         
+        # --- Sampling ---
+
         # Sample additional words
         last_idx = indices[-1]
         sampled_indices = self.sample_words(last_idx, h, n, sample_strategy)
@@ -332,10 +321,3 @@ class RNN:
         generated_text = ' '.join(self.ix_to_word.get(idx, "<UNK>") for idx in all_indices)
         
         return generated_text
-    
-    def softmax(self, x):
-        """
-        Compute softmax values for each set of scores in x.
-        """
-        e_x = np.exp(x - np.max(x, axis=0))
-        return e_x / e_x.sum(axis=0)
