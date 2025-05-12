@@ -41,8 +41,8 @@ def get_or_build_tokenizer(config, dataset, lang):
 
 def get_dataset(config, split = "train"):
     dataset_raw = load_dataset(
-        'mt_eng_vietnamese',  
-        "iwslt2015-en-vi", 
+        f"{config['datasource']}",  
+        f"{config['lang_src']}-{config['lang_tgt']}", 
         split = split
     ).shuffle(seed = 42)
 

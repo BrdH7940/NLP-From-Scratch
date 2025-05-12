@@ -4,7 +4,7 @@ from Config import get_config, get_weights_file_path, latest_weights_file_path
 from Tokenizer import get_all_sentences, get_or_build_tokenizer, get_dataset
 
 # Dataset Helpers
-import torchtext.datasets as datasets
+from datasets import load_dataset
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
