@@ -40,8 +40,9 @@ def get_or_build_tokenizer(config, dataset, lang):
 
 def get_dataset(config, split = "train"):
     dataset_raw = load_dataset(
-        f"{config['datasource']}",  
-        f"{config['lang_src']}-{config['lang_tgt']}", 
+        f"{config['datasource']}",
+        f"iwslt2015-{config['lang_src']}-{config['lang_tgt']}", 
+        revision = "refs/convert/parquet",
         split = split
     ).shuffle(seed = 42)
 
