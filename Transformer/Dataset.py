@@ -13,9 +13,9 @@ class BilingualDataset(Dataset):
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
 
-        self.sos_token = torch.tensor([tokenizer_tgt.token_to_id(['[SOS]'])], dtype = torch.int64)
-        self.eos_token = torch.tensor([tokenizer_tgt.token_to_id(['[EOS]'])], dtype = torch.int64)
-        self.pad_token = torch.tensor([tokenizer_tgt.token_to_id(['[PAD]'])], dtype = torch.int64)
+        self.sos_token = torch.tensor([tokenizer_tgt.token_to_id(["[SOS]"])], dtype = torch.int64)
+        self.eos_token = torch.tensor([tokenizer_tgt.token_to_id(["[EOS]"])], dtype = torch.int64)
+        self.pad_token = torch.tensor([tokenizer_tgt.token_to_id(["[PAD]"])], dtype = torch.int64)
 
     def __len__(self):
         return len(self.dataset)
@@ -35,7 +35,7 @@ class BilingualDataset(Dataset):
             raise ValueError('Sentence is too long')
         
         # Add SOS and EOS to the source text
-        encoder_input = torch.catt(
+        encoder_input = torch.cat(
             [
                 self.sos_token,
                 torch.tensor(enc_input_tokens, dtype = torch.int64),
@@ -45,10 +45,10 @@ class BilingualDataset(Dataset):
         )
 
         # Add SOS to the decoder input
-        decoder_input = torch.catt(
+        decoder_input = torch.cat(
             [
                 self.sos_token,
-                torch.tensor(enc_input_tokens, dtype = torch.int64),
+                torch.tensor(dec_input_tokens, dtype = torch.int64),
                 torch.tensor([self.pad_token] * dec_num_padding_tokens, dtype = torch.int64)
             ]
         )

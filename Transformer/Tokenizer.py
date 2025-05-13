@@ -2,7 +2,6 @@ from Config import *
 from Dataset import *
 
 # Training
-import torchtext.datasets as datasets
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
