@@ -122,6 +122,10 @@ def chunk(original_dataset, tokenizer_src, tokenizer_tgt, config):
         if not item_produced_valid_chunk:
             num_original_pairs_fully_discarded +=1
 
+    print(f"Finished processing and chunking.")
+    print(f"Number of original sentence pairs: {num_original_pairs}.")
+    print(f"Total usable sentence/chunk pairs created: {len(processed_items)}.")
+
     if not processed_items:
         raise ValueError("Processing and chunking resulted in an empty dataset. Check seq_len, tokenizer, and data quality. Ensure original data is not all empty strings.")
 
