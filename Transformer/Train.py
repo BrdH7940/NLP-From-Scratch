@@ -28,38 +28,48 @@ import torchmetrics
 from torch.utils.tensorboard import SummaryWriter
 
 def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len, device):
+    """
+    Performs translation for a single source sentence using greedy decoding strategy
+
+    During validation, use it to check performance
+    """
     sos_idx = tokenizer_tgt.token_to_id('[SOS]')
     eos_idx = tokenizer_tgt.token_to_id('[EOS]')
 
-    # Pre-compute the encoder output and reuse it for every step
+    # Source sentence is passed through encoder, then it will be reused for each step of decoding target sentence
     encoder_output = model.encode(source, source_mask)
-    # Initialize the decoder output with SOS token
+    # Initialize the decoder input with SOS token
     decoder_input = torch.empty(1, 1).fill_(sos_idx).type_as(source).to(device)
 
     while True:
         if decoder_input.size(1) == max_len:
             break
 
-        # Build mask for target
+        # Build mask for current target (decoder_input)
         decoder_mask = causal_mask(decoder_input.size(1)).type_as(source_mask).to(device)
 
-        # Calculate output
-        out = model.decode(encoder_output, source_mask, decoder_input, decoder_mask)
+        # Get decoder_output based on encoder_output and decoder_input
+        out = model.decode(encoder_output, source_mask, decoder_input, decoder_mask) # (batch_size, current_target_seq_len, d_model)
 
         # Get next token
-        prob = model.project(out[:, -1])
+
+        # Get probabilities for the final word (Word being generated)
+        prob = model.project(out[:, -1])  # out[:, -1]: (batch_size, d_model) --> prob: (batch_size, target_vocab_size)
         _, next_word = torch.max(prob, dim = 1)
         decoder_input = torch.cat(
             [decoder_input, torch.empty(1, 1).type_as(source).fill_(next_word.item()).to(device)],
             dim = 1
-        )
+        ) # Append the predicted next_word into decoder_input for further usages
         
-        if next_word == eos_idx:
+        if next_word == eos_idx: # Stop if [EOS] predicted
             break
     
-    return decoder_input.squeeze(0)
+    return decoder_input.squeeze(0) # Remove batch dimension
 
 def run_validation(model, val_dataset, tokenizer_src, tokenizer_tgt, max_len, device, print_msg, global_step, writer, num_examples = 2):
+    """
+    Evaluate model on validation set
+    """
     model.eval()
     count = 0
 

@@ -21,15 +21,43 @@ class BilingualDataset(Dataset):
         return len(self.dataset)
     
     def __getitem__(self, index):
+        """
+        Fetches corresponding sentence pair --> Tokenizer --> Add Special Tokens --> Padding --> Prepare Mask
+
+        Construct Tensors:
+            Encoder Input Format:
+            - [SOS] + Source_Token_ids + [EOS] + [PAD]s
+            - Length = seq_len
+
+            Decoder Input Format:
+            - [SOS] + Target_Token_ids + [PAD]s (The model learns to predict [EOS])
+            - Length = seq_len
+
+            Label:
+            - Target_Token_ids + [EOS] + [PAD]s
+            - Length = seq_len
+
+        Output:
+            - encoder_input
+            - decoder_input
+            - encoder_mask
+            - decoder_mask
+            - label
+            - src_text
+            - tgt_text
+        """
+        # Fetch
         src_target_pair = self.dataset[index]
         src_text = src_target_pair['translation'][self.src_lang]
         tgt_text = src_target_pair['translation'][self.tgt_lang]
 
+        # Tokenize
         enc_input_tokens = self.tokenizer_src.encode(src_text).ids
         dec_input_tokens = self.tokenizer_tgt.encode(tgt_text).ids
 
+        # Padding
         enc_num_padding_tokens = self.seq_len - len(enc_input_tokens) - 2 # SOS, EOS
-        dec_num_padding_tokens = self.seq_len - len(dec_input_tokens) - 1
+        dec_num_padding_tokens = self.seq_len - len(dec_input_tokens) - 1 # SOS
 
         if enc_num_padding_tokens < 0 or dec_num_padding_tokens < 0:
             raise ValueError('Sentence is too long')
@@ -70,12 +98,16 @@ class BilingualDataset(Dataset):
             'encoder_input': encoder_input, # (seq_len)
             'decoder_input': decoder_input, # (seq_len)
             'encoder_mask': (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1, 1, seq_len)
-            'decoder_mask': (decoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & causal_mask(decoder_input.size(0)), # (1, seq_len) & (1, seq_len, seq_len)
+            'decoder_mask': (decoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & causal_mask(decoder_input.size(0)), # (1, 1, seq_len) & (1, seq_len, seq_len)
             'label': label, # (seq_len)
             'src_text': src_text,
             'tgt_text': tgt_text
         }
     
 def causal_mask(size):
+    '''
+    In transformer decoder, when processing a target token, only restrict it to look at previous tokens in target sequence, not future ones
+    '''
+    # Upper triangular matrix, result in a matrix where positions "future" tokens are 1, other are zero
     mask = torch.triu(torch.ones(1, size, size), diagonal = 1).type(torch.int)
-    return mask == 0
+    return mask == 0 # Reverse
