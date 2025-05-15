@@ -2,10 +2,10 @@ from pathlib import Path
 
 from Config import get_config, latest_weights_file_path 
 from Model import build_transformer
+from Dataset import BilingualDataset
 
 from tokenizers import Tokenizer
 from datasets import load_dataset
-from dataset import BilingualDataset
 import torch
 import sys
 

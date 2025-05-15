@@ -134,10 +134,15 @@ def chunk(original_dataset, tokenizer_src, tokenizer_tgt, config):
 def get_dataset(config, split = "train"):
     dataset_raw = load_dataset(
         f"{config['datasource']}",
-        f"iwslt2015-{config['lang_src']}-{config['lang_tgt']}", 
-        revision = "refs/convert/parquet",
+        f"{config['lang_src']}-{config['lang_tgt']}",
         split = split
     ).shuffle(seed = 42)
+    # dataset_raw = load_dataset(
+    #     f"{config['datasource']}",
+    #     f"iwslt2015-{config['lang_src']}-{config['lang_tgt']}", 
+    #     revision = "refs/convert/parquet",
+    #     split = split
+    # ).shuffle(seed = 42)
 
     # Build tokenizers
     tokenizer_src = get_or_build_tokenizer(config, dataset_raw, config['lang_src'])
