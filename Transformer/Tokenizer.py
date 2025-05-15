@@ -163,6 +163,8 @@ def get_dataset(config, split = "train"):
 
     print(f'Max length of source sentence: {max_len_src}')
     print(f'Max length of target sentence: {max_len_tgt}')
+    print(f'Length of source tokenizer: {tokenizer_src.get_vocab_size()}')
+    print(f'Length of target tokenizer: {tokenizer_tgt.get_vocab_size()}')
 
     # Size ratio (Training, Validation) = (0.9, 0.1)
     train_ds_size = int(0.9 * len(dataset_raw))
