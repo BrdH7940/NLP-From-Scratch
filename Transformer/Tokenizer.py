@@ -18,12 +18,16 @@ def get_all_sentences(dataset, lang):
     for item in dataset:
         yield item['translation'][lang]
 
-def get_or_build_tokenizer(config, dataset, lang):
+def get_or_build_tokenizer(config, dataset, lang, base_path="/kaggle/working/NLP-From-Scratch/Transformer"):
     # Path where tokenizer for given language is saved
-    tokenizer_path = Path(config['tokenizer_file'].format(lang))
+    tokenizer_path = Path(base_path) / config['tokenizer_file'].format(lang)
+
+    # Make sure the directory exists
+    tokenizer_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not Path.exists(tokenizer_path):
         # Build 
+        print("=== Tokenizer: Building ===")
         tokenizer = Tokenizer(WordLevel(unk_token = "[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
 
@@ -35,6 +39,7 @@ def get_or_build_tokenizer(config, dataset, lang):
         tokenizer.save(str(tokenizer_path))
     else:
         # Load
+        print("=== Tokenizer: Loading ===")
         tokenizer = Tokenizer.from_file(str(tokenizer_path))
     
     return tokenizer
