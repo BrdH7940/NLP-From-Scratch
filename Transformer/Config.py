@@ -7,7 +7,7 @@ def get_config():
         "lr": 10**-4,
         "seq_len": 350,
         "d_model": 512,
-        'datasource': 'Helsinki-NLP/opus_books',
+        'datasource': 'Helsinki-NLP/opus_books', # #IWSLT/mt_eng_vietnamese
         "lang_src": "en",
         "lang_tgt": "it",
         "model_folder": "weights",

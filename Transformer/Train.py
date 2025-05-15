@@ -135,6 +135,8 @@ def run_validation(model, val_dataset, tokenizer_src, tokenizer_tgt, max_len, de
         writer.flush()
     
 def get_model(config, vocab_src_len, vocab_tgt_len):
+    print("Current model source tokenizer:", vocab_src_len)
+    print("Current model target tokenizer:", vocab_tgt_len)
     model = build_transformer(vocab_src_len, vocab_tgt_len, config['seq_len'], config['seq_len'], d_model = config['d_model'], N = 2)
     return model
 
